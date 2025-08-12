@@ -1,0 +1,399 @@
+Perspective API CRUD Application
+
+# ==============================================================================
+# File: app/main.py
+# Description: Main entry point for the FastAPI application.
+# ==============================================================================
+import uvicorn
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from .api.v1.endpoints import perspective_routes
+from .database import create_db_and_tables
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Handles startup and shutdown events for the application.
+    Creates database tables on startup.
+    """
+    print("Application startup...")
+    create_db_and_tables()
+    yield
+    print("Application shutdown...")
+
+app = FastAPI(
+    title="Perspective API",
+    description="A futuristic API for managing user perspectives.",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Include the API router for perspective management
+app.include_router(perspective_routes.router, prefix="/api/v1")
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+# ==============================================================================
+# File: app/database.py
+# Description: Manages the PostgreSQL database connection using SQLAlchemy.
+# ==============================================================================
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import declarative_base
+
+# Database connection URL. This should be configured via environment variables in a real app.
+DATABASE_URL = "postgresql://user:password@db:5432/perspective_db"
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+def get_db():
+    """Dependency to get a database session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def create_db_and_tables():
+    """Creates all database tables defined in the Base metadata."""
+    Base.metadata.create_all(bind=engine)
+
+# ==============================================================================
+# File: app/models/perspective_model.py
+# Description: Defines the SQLAlchemy ORM model for the 'perspectives' table.
+# ==============================================================================
+import datetime
+from sqlalchemy import Column, String, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+
+from ..database import Base
+
+class Perspective(Base):
+    """
+    SQLAlchemy model representing a user's perspective.
+    The username is used as the unique identifier.
+    """
+    __tablename__ = "perspectives"
+
+    username = Column(String, primary_key=True, index=True, unique=True)
+    layout_name = Column(String, nullable=False)
+    
+    # JSONB is ideal for storing semi-structured data like this
+    column_state = Column(JSONB, default=[])
+    sort_model = Column(JSONB, default=[])
+    filter_model = Column(JSONB, default={})
+
+    updated_by = Column(String, nullable=False)
+    updated_time = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
+
+    def __repr__(self):
+        return f"<Perspective(username='{self.username}', layout_name='{self.layout_name}')>"
+
+# ==============================================================================
+# File: app/schemas/perspective_schemas.py
+# Description: Pydantic schemas for request/response data validation and serialization.
+# ==============================================================================
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from pydantic import BaseModel, Field, EmailStr, validator
+
+# Schema for an individual item within column_state
+class ColumnStateItem(BaseModel):
+    name: str = Field(..., description="Unique name for the column state.")
+    view: str
+    default_columns: List[str] = Field(..., alias="defaultColumns")
+    default: bool
+
+# Schema for an individual item within sort_model
+class SortModelItem(BaseModel):
+    name: str = Field(..., description="Unique name for the sort model.")
+    view: str
+    filters: Dict[str, Any]
+    default: bool
+
+# Schema for the main perspective data (request body)
+class PerspectiveCreate(BaseModel):
+    username: str = Field(..., description="The unique username for the perspective.")
+    layout_name: str
+    column_state: List[ColumnStateItem] = []
+    sort_model: List[SortModelItem] = []
+    filter_model: Dict[str, Any] = {}
+    updated_by: EmailStr = Field(..., description="The email of the user who updated the perspective.")
+
+    # Validation to ensure no duplicate names within column_state and sort_model
+    @validator('column_state')
+    def validate_column_state_names(cls, v):
+        names = [item.name for item in v]
+        if len(names) != len(set(names)):
+            raise ValueError('Duplicate names found in column_state')
+        return v
+
+    @validator('sort_model')
+    def validate_sort_model_names(cls, v):
+        names = [item.name for item in v]
+        if len(names) != len(set(names)):
+            raise ValueError('Duplicate names found in sort_model')
+        return v
+
+# Schema for updating a perspective (partial update)
+class PerspectiveUpdate(BaseModel):
+    layout_name: Optional[str] = None
+    column_state: Optional[List[ColumnStateItem]] = None
+    sort_model: Optional[List[SortModelItem]] = None
+    filter_model: Optional[Dict[str, Any]] = None
+    updated_by: Optional[EmailStr] = None
+
+    # Validation to ensure no duplicate names within column_state and sort_model
+    @validator('column_state', pre=True)
+    def validate_update_column_state_names(cls, v):
+        if v is not None:
+            names = [item.get('name') if isinstance(item, dict) else item.name for item in v]
+            if len(names) != len(set(names)):
+                raise ValueError('Duplicate names found in column_state')
+        return v
+
+    @validator('sort_model', pre=True)
+    def validate_update_sort_model_names(cls, v):
+        if v is not None:
+            names = [item.get('name') if isinstance(item, dict) else item.name for item in v]
+            if len(names) != len(set(names)):
+                raise ValueError('Duplicate names found in sort_model')
+        return v
+
+# Schema for the response model (including `updated_time`)
+class PerspectiveResponse(BaseModel):
+    username: str
+    layout_name: str
+    column_state: List[ColumnStateItem]
+    sort_model: List[SortModelItem]
+    filter_model: Dict[str, Any]
+    updated_by: EmailStr
+    updated_time: datetime
+
+    class Config:
+        orm_mode = True
+        allow_population_by_field_name = True
+        alias_generator = lambda string: string.replace('_', '')
+
+
+# ==============================================================================
+# File: app/services/perspective_service.py
+# Description: Contains business logic for interacting with the database.
+# ==============================================================================
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+from typing import Optional, List
+
+from .. import schemas
+from ..models import perspective_model
+
+def get_perspective_by_username(db: Session, username: str) -> Optional[perspective_model.Perspective]:
+    """
+    Fetches a single perspective by its unique username.
+    """
+    return db.query(perspective_model.Perspective).filter(perspective_model.Perspective.username == username).first()
+
+def create_perspective(db: Session, perspective: schemas.PerspectiveCreate) -> perspective_model.Perspective:
+    """
+    Creates a new perspective in the database.
+    Raises an error if the username already exists.
+    """
+    existing_perspective = get_perspective_by_username(db, username=perspective.username)
+    if existing_perspective:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A perspective with username '{perspective.username}' already exists."
+        )
+
+    # Convert Pydantic models to a dictionary for SQLAlchemy
+    db_perspective = perspective_model.Perspective(
+        username=perspective.username,
+        layout_name=perspective.layout_name,
+        column_state=[item.dict(by_alias=True) for item in perspective.column_state],
+        sort_model=[item.dict(by_alias=True) for item in perspective.sort_model],
+        filter_model=perspective.filter_model,
+        updated_by=perspective.updated_by
+    )
+    db.add(db_perspective)
+    db.commit()
+    db.refresh(db_perspective)
+    return db_perspective
+
+def update_perspective(db: Session, username: str, perspective_update: schemas.PerspectiveUpdate) -> perspective_model.Perspective:
+    """
+    Updates an existing perspective.
+    Handles partial updates and ensures uniqueness of names in lists.
+    """
+    db_perspective = get_perspective_by_username(db, username=username)
+    if not db_perspective:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Perspective with username '{username}' not found."
+        )
+
+    update_data = perspective_update.dict(exclude_unset=True)
+
+    # Manually handle updates to lists and dicts to ensure data integrity
+    if 'column_state' in update_data:
+        # Pydantic validation on the schema already ensures names are unique.
+        db_perspective.column_state = [item.dict(by_alias=True) for item in update_data['column_state']]
+    if 'sort_model' in update_data:
+        db_perspective.sort_model = [item.dict(by_alias=True) for item in update_data['sort_model']]
+    if 'filter_model' in update_data:
+        db_perspective.filter_model = update_data['filter_model']
+    if 'layout_name' in update_data:
+        db_perspective.layout_name = update_data['layout_name']
+    if 'updated_by' in update_data:
+        db_perspective.updated_by = update_data['updated_by']
+
+    db.add(db_perspective)
+    db.commit()
+    db.refresh(db_perspective)
+    return db_perspective
+
+def delete_perspective(db: Session, username: str) -> None:
+    """
+    Deletes a perspective from the database.
+    """
+    db_perspective = get_perspective_by_username(db, username=username)
+    if not db_perspective:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Perspective with username '{username}' not found."
+        )
+    db.delete(db_perspective)
+    db.commit()
+
+# ==============================================================================
+# File: app/api/v1/endpoints/perspective_routes.py
+# Description: Defines the API endpoints for perspective CRUD operations.
+# ==============================================================================
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+from typing import List
+
+from ....database import get_db
+from .... import schemas
+from ....services import perspective_service
+
+router = APIRouter(tags=["Perspectives"])
+
+@router.post("/perspectives", response_model=schemas.PerspectiveResponse, status_code=status.HTTP_201_CREATED)
+def create_new_perspective(perspective: schemas.PerspectiveCreate, db: Session = Depends(get_db)):
+    """
+    Creates a new user perspective.
+    - **`username`**: Unique identifier for the user.
+    - **`updated_by`**: Email of the user making the change.
+    - **`column_state`**, **`sort_model`**: Lists where each item's 'name' must be unique.
+    """
+    return perspective_service.create_perspective(db=db, perspective=perspective)
+
+@router.get("/perspectives/{username}", response_model=schemas.PerspectiveResponse)
+def get_perspective_by_user(username: str, db: Session = Depends(get_db)):
+    """
+    Retrieves a single perspective by username.
+    """
+    db_perspective = perspective_service.get_perspective_by_username(db, username=username)
+    if db_perspective is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Perspective not found"
+        )
+    return db_perspective
+
+@router.patch("/perspectives/{username}", response_model=schemas.PerspectiveResponse)
+def update_existing_perspective(username: str, perspective: schemas.PerspectiveUpdate, db: Session = Depends(get_db)):
+    """
+    Updates an existing perspective.
+    - **`username`**: Unique identifier for the user.
+    - **`updated_by`**: Email of the user making the change.
+    - **`column_state`**, **`sort_model`**: Lists where each item's 'name' must be unique.
+    """
+    return perspective_service.update_perspective(db=db, username=username, perspective_update=perspective)
+
+@router.delete("/perspectives/{username}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_existing_perspective(username: str, db: Session = Depends(get_db)):
+    """
+    Deletes a perspective by username.
+    """
+    perspective_service.delete_perspective(db=db, username=username)
+    return {"message": "Perspective deleted successfully"}
+
+# ==============================================================================
+# File: Dockerfile
+# Description: Dockerfile to containerize the FastAPI application.
+# ==============================================================================
+# Use an official Python runtime as a parent image
+FROM python:3.9-slim
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the requirements file into the container
+COPY requirements.txt .
+
+# Install any needed packages specified in requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the rest of the application code
+COPY . .
+
+# Expose port 8000
+EXPOSE 8000
+
+# Run the application
+CMD ["python", "app/main.py"]
+
+# ==============================================================================
+# File: docker-compose.yml
+# Description: Docker Compose file to run the FastAPI app and PostgreSQL DB.
+# ==============================================================================
+version: "3.8"
+
+services:
+  db:
+    image: postgres:13
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: perspective_db
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    container_name: fastapi_app
+    command: sh -c "python app/main.py"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://user:password@db:5432/perspective_db
+
+# ==============================================================================
+# File: requirements.txt
+# Description: Required Python packages.
+# ==============================================================================
+fastapi
+uvicorn
+sqlalchemy[asyncio]
+pydantic[email]
+psycopg2-binary
+python-dotenv

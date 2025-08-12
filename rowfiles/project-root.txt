@@ -1,0 +1,405 @@
+Project Folder Structure
+/project-root
+├── main.py
+├── requirements.txt
+└── perspectives_app/
+    ├── __init__.py
+    ├── database.py
+    ├── perspective_model.py
+    ├── perspective_route.py
+    ├── perspective_schemas.py
+    └── perspective_schemas_validation.py
+
+
+File: main.py
+# ====================================================================================
+# File: main.py
+# Description: Main entry point for the FastAPI application.
+# It initializes the app and includes the API router.
+# ====================================================================================
+
+import uvicorn
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from typing import Dict, Any
+
+from .perspectives_app.perspective_route import router
+
+# A global variable to store the database connection pool or client.
+# In a real application, you would initialize your database connection here.
+db_client = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    This function will run on application startup and shutdown.
+    It's a perfect place to initialize and close resources, like a database connection pool.
+    """
+    print("Application startup...")
+    # In a real app, initialize your database connection here.
+    # For example:
+    # from perspectives_app.perspective_model import get_database_connection
+    # db_client['pool'] = await get_database_connection()
+    yield
+    print("Application shutdown...")
+    # In a real app, close your database connection here.
+    # For example:
+    # await db_client['pool'].close()
+
+app = FastAPI(
+    title="Perspective API",
+    description="A CRUD API for managing user perspectives and their column states.",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Include the router for the perspective endpoints.
+app.include_router(router)
+
+@app.get("/")
+async def root():
+    return {"message": "Welcome to the Perspective API"}
+
+if __name__ == "__main__":
+    # Use Uvicorn to run the FastAPI application.
+    # The `reload=True` option is great for development as it restarts the server on code changes.
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+File: requirements.txt
+fastapi
+uvicorn
+pydantic
+psycopg2-binary # Driver for PostgreSQL
+
+File: perspectives_app/database.py
+# ====================================================================================
+# File: database.py
+# Description: This file manages the PostgreSQL database connection and cursor.
+# The connection logic is now separate from the business logic.
+# ====================================================================================
+
+import psycopg2
+from psycopg2.extensions import connection, cursor
+from typing import Tuple
+
+# Database connection details (replace with your actual details or environment variables).
+DB_NAME = "skg023"
+DB_USER = "your_db_user"
+DB_PASSWORD = "your_db_password"
+DB_HOST = "localhost"
+DB_PORT = "5432"
+DB_SCHEMA = "recsui"
+
+def get_db_connection() -> Tuple[connection, cursor]:
+    """
+    Establishes a connection to the PostgreSQL database and returns
+    both the connection and a cursor object.
+
+    Raises:
+        psycopg2.Error: If the connection fails.
+    """
+    try:
+        conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT,
+        )
+        curr = conn.cursor()
+        curr.execute(f"SET search_path TO {DB_SCHEMA};")
+        print("Successfully connected to the database.")
+        return conn, curr
+    except psycopg2.Error as e:
+        print(f"Error connecting to the database: {e}")
+        raise
+
+def close_db_connection(conn: connection, curr: cursor):
+    """Closes the database cursor and connection."""
+    if curr:
+        curr.close()
+    if conn:
+        conn.close()
+    print("Database connection closed.")
+
+File: perspectives_app/perspective_model.py
+# ====================================================================================
+# File: perspective_model.py
+# Description: Data access layer for interacting with the PostgreSQL database.
+# This module contains the business logic for all CRUD operations on the
+# `perspectives` table. It no longer manages the database connection itself.
+# ====================================================================================
+
+import psycopg2
+from psycopg2.extensions import connection, cursor
+from typing import List, Optional, Dict, Any
+import json
+import os
+
+from .perspective_schemas import ColumnState, UserPerspectiveCreate, ColumnStateUpdate
+
+class PerspectiveModel:
+    """
+    Handles all business logic for CRUD operations on the 'perspectives' table.
+    Methods in this class accept a cursor object to perform database operations.
+    """
+    def get_user_perspective(self, curr: cursor, username: str) -> Optional[Dict[str, Any]]:
+        """Fetches the entire perspective for a given username."""
+        try:
+            query = "SELECT * FROM perspectives WHERE username = %s;"
+            curr.execute(query, (username,))
+            record = curr.fetchone()
+            if record:
+                columns = [desc[0] for desc in curr.description]
+                perspective_data = dict(zip(columns, record))
+                for key in ['column_state', 'sort_model', 'filter_model']:
+                    if key in perspective_data and isinstance(perspective_data[key], str):
+                        perspective_data[key] = json.loads(perspective_data[key])
+                return perspective_data
+            return None
+        except psycopg2.Error as e:
+            print(f"Error fetching user perspective: {e}")
+            return None
+
+    def create_or_update_perspective(self, conn: connection, curr: cursor, data: UserPerspectiveCreate) -> bool:
+        """
+        Inserts a new perspective for a user or updates it if the user already exists.
+        """
+        try:
+            existing_user = self.get_user_perspective(curr, data.username)
+
+            if existing_user:
+                current_column_states = existing_user.get('column_state', [])
+                new_column_states = data.column_state
+                current_map = {cs['name']: cs for cs in current_column_states}
+                
+                updated_column_states = []
+                for new_cs in new_column_states:
+                    if new_cs.name in current_map:
+                        current_map[new_cs.name] = new_cs.model_dump()
+                    else:
+                        updated_column_states.append(new_cs.model_dump())
+                
+                final_column_states = list(current_map.values()) + updated_column_states
+                
+                update_query = """
+                    UPDATE perspectives SET 
+                        column_state = %s::jsonb, 
+                        updated_by = %s
+                    WHERE username = %s;
+                """
+                curr.execute(update_query, (
+                    json.dumps(final_column_states),
+                    data.updated_by,
+                    data.username
+                ))
+                conn.commit()
+                return True
+            else:
+                insert_query = """
+                    INSERT INTO perspectives (username, layout_name, column_state, sort_model, filter_model, updated_by)
+                    VALUES (%s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s);
+                """
+                curr.execute(insert_query, (
+                    data.username,
+                    data.layout_name,
+                    json.dumps([cs.model_dump() for cs in data.column_state]),
+                    json.dumps(data.sort_model),
+                    json.dumps(data.filter_model),
+                    data.updated_by
+                ))
+                conn.commit()
+                return True
+        except psycopg2.Error as e:
+            print(f"Error creating or updating perspective: {e}")
+            conn.rollback()
+            return False
+
+    def get_all_column_states(self, curr: cursor, username: str) -> Optional[List[Dict[str, Any]]]:
+        """Fetches all column states for a given user."""
+        perspective = self.get_user_perspective(curr, username)
+        return perspective.get('column_state') if perspective else None
+        
+    def update_column_state_by_name(self, conn: connection, curr: cursor, username: str, name: str, update_data: ColumnStateUpdate) -> bool:
+        """
+        Updates a specific column state entry by its name for a given user.
+        """
+        try:
+            perspective = self.get_user_perspective(curr, username)
+            if not perspective:
+                return False
+
+            column_states = perspective.get('column_state', [])
+            found = False
+            for cs in column_states:
+                if cs.get('name') == name:
+                    update_dict = update_data.model_dump(exclude_unset=True)
+                    cs.update(update_dict)
+                    found = True
+                    break
+
+            if found:
+                update_query = "UPDATE perspectives SET column_state = %s::jsonb WHERE username = %s;"
+                curr.execute(update_query, (json.dumps(column_states), username))
+                conn.commit()
+                return True
+            else:
+                print(f"Column state with name '{name}' not found for user '{username}'.")
+                return False
+        except psycopg2.Error as e:
+            print(f"Error updating column state by name: {e}")
+            conn.rollback()
+            return False
+
+    def delete_column_state_by_name(self, conn: connection, curr: cursor, username: str, name: str) -> bool:
+        """Deletes a specific column state entry by its name for a given user."""
+        try:
+            perspective = self.get_user_perspective(curr, username)
+            if not perspective:
+                return False
+
+            column_states = perspective.get('column_state', [])
+            initial_count = len(column_states)
+            updated_column_states = [cs for cs in column_states if cs.get('name') != name]
+
+            if len(updated_column_states) < initial_count:
+                update_query = "UPDATE perspectives SET column_state = %s::jsonb WHERE username = %s;"
+                curr.execute(update_query, (json.dumps(updated_column_states), username))
+                conn.commit()
+                return True
+            else:
+                print(f"Column state with name '{name}' not found for user '{username}'.")
+                return False
+        except psycopg2.Error as e:
+            print(f"Error deleting column state by name: {e}")
+            conn.rollback()
+            return False
+
+File: perspectives_app/perspective_route.py
+# ====================================================================================
+# File: perspective_route.py
+# Description: API routes/endpoints for the perspective service.
+# It uses the Pydantic schemas for data validation and the model for database interaction.
+# ====================================================================================
+
+from fastapi import APIRouter, HTTPException, Path
+from typing import List
+
+from .perspective_schemas import UserPerspectiveCreate, ColumnState, ColumnStateUpdate
+from .perspective_model import PerspectiveModel
+from .database import get_db_connection, close_db_connection
+
+# Create an instance of the router.
+router = APIRouter(
+    prefix="/perspectives",
+    tags=["perspectives"],
+    responses={404: {"description": "Not found"}},
+)
+
+# Initialize the database model.
+db_model = PerspectiveModel()
+
+@router.post("/column_state", response_model=bool)
+def create_or_update_column_states(data: UserPerspectiveCreate):
+    """
+    Creates a new user perspective or updates an existing one.
+    This endpoint handles the logic of checking if the user exists and
+    then either inserting a new record or updating the column_state array.
+    """
+    conn, curr = None, None
+    try:
+        conn, curr = get_db_connection()
+        success = db_model.create_or_update_perspective(conn, curr, data)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to save perspective data.")
+        return True
+    finally:
+        if conn and curr:
+            close_db_connection(conn, curr)
+
+@router.get("/column_state/{username}", response_model=List[ColumnState])
+def get_column_states(username: str):
+    """
+    Retrieves all column states for a specified user.
+    """
+    conn, curr = None, None
+    try:
+        conn, curr = get_db_connection()
+        column_states = db_model.get_all_column_states(curr, username)
+        if column_states is None:
+            raise HTTPException(status_code=404, detail=f"User '{username}' or their column states not found.")
+        return column_states
+    finally:
+        if conn and curr:
+            close_db_connection(conn, curr)
+
+@router.put("/column_state/{username}/{name}", response_model=bool)
+def update_column_state_by_name(
+    username: str,
+    name: str,
+    update_data: ColumnStateUpdate
+):
+    """
+    Updates a specific column state entry by its unique name for a given user.
+    """
+    conn, curr = None, None
+    try:
+        conn, curr = get_db_connection()
+        success = db_model.update_column_state_by_name(conn, curr, username, name, update_data)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Column state '{name}' not found or update failed.")
+        return True
+    finally:
+        if conn and curr:
+            close_db_connection(conn, curr)
+
+@router.delete("/column_state/{username}/{name}", response_model=bool)
+def delete_column_state_by_name(username: str, name: str):
+    """
+    Deletes a specific column state entry by its unique name for a given user.
+    """
+    conn, curr = None, None
+    try:
+        conn, curr = get_db_connection()
+        success = db_model.delete_column_state_by_name(conn, curr, username, name)
+        if not success:
+            raise HTTPException(status_code=404, detail=f"Column state '{name}' not found or delete failed.")
+        return True
+    finally:
+        if conn and curr:
+            close_db_connection(conn, curr)
+
+File: perspectives_app/perspective_schemas.py
+# ====================================================================================
+# File: perspective_schemas.py
+# Description: Pydantic models for data validation and serialization.
+# These schemas define the structure of the data for requests and responses.
+# ====================================================================================
+
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+
+# Schema for the individual column state object.
+class ColumnState(BaseModel):
+    name: str = Field(..., description="The unique name for the column state.")
+    view: str
+    defaultColumns: List[str]
+    default: bool
+
+# Schema for the incoming request body that contains all data.
+class UserPerspectiveCreate(BaseModel):
+    username: str
+    layout_name: str
+    column_state: List[ColumnState]
+    sort_model: List[Dict[str, Any]]
+    filter_model: List[Dict[str, Any]]
+    updated_by: str
+
+# Schema for a partial update of a column state.
+class ColumnStateUpdate(BaseModel):
+    view: Optional[str] = None
+    defaultColumns: Optional[List[str]] = None
+    default: Optional[bool] = None
+
+File: perspectives_app/perspective_schemas_validation.py
+Pydantic, as used in perspective_schemas.py, handles data validation automatically. Therefore, a separate file for validation (perspective_schemas_validation.py) is not necessary. The schemas themselves contain all the necessary validation logic.

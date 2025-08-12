@@ -1,0 +1,335 @@
+Skip to content
+Chat history
+
+You said:
+{
+
+"id": "...",
+
+"username": "...",
+
+"layout_name": "...",
+
+column_state = [{
+
+"name": "Skg",
+
+"view": "reconciliations",
+
+"defaultColumns": [
+
+"forcedEscalated", "businessUnit", "cif", "reClass", "riskEventType", 
+
+"reAmount", "reAmountCurrency", "priority", "reClassification", 
+
+"resolutionDate", "aging"
+
+],
+
+"default": False
+
+}]
+
+sort_model = [{
+
+"name": "CCY",
+
+"view": "reconciliations",
+
+"filters": {"Default11_reAmountCurrency": {"type": "contains", "filter": "AUD"}},
+
+"default": False
+
+}]
+
+filter_model = {}
+
+"updated_by": "...",
+
+"updated_time": "..."
+
+}
+
+
+
+Analyze the data in JSON that was shared
+
+
+
+Build a perspective CRUD api code with the best application folder structure with perspective_route, perspective_schemas, perspective_schemas_validation, perspective_service, postgresql DB connection, models in Python according to the PostgreSQL database and JSON code, which should select data by username and generate code edit, update, create, and delete "column_state", "sort_model," "filter_model" because "username" will also be a unique name like id "updated_time" will be updated as per CRUD action also handle while updating and creating "column_state", "sort_model," "filter_model" data by name value in every object should be verfy, and while making, no duplicates with the same name, "updated_by" should be email and "updated_time" taken care by CRUD action. API should be futuristic so we can add more API in the main or app files with other services.
+ChatGPT said:
+Got it — you want me to take the JSON you shared, analyze its structure, then build a futuristic, extensible CRUD API in Python with PostgreSQL using a clean, modular folder structure.
+
+Let’s break it into two steps:
+
+1. JSON Analysis
+Here’s the given JSON, formatted and analyzed:
+
+{
+  "id": "...",                  // Unique identifier (probably UUID or numeric ID)
+  "username": "...",            // Unique username (acts like an ID for CRUD queries)
+  "layout_name": "...",         // Layout configuration name
+
+  "column_state": [
+    {
+      "name": "Skg",             // Unique name within column_state array
+      "view": "reconciliations", // View this state belongs to
+      "defaultColumns": [
+        "forcedEscalated", "businessUnit", "cif", "reClass", 
+        "riskEventType", "reAmount", "reAmountCurrency", 
+        "priority", "reClassification", "resolutionDate", "aging"
+      ],
+      "default": false
+    }
+  ],
+
+  "sort_model": [
+    {
+      "name": "CCY",             // Unique name within sort_model array
+      "view": "reconciliations",
+      "filters": {
+        "Default11_reAmountCurrency": {
+          "type": "contains",
+          "filter": "AUD"
+        }
+      },
+      "default": false
+    }
+  ],
+
+  "filter_model": {},            // Currently empty — future filtering configs
+
+  "updated_by": "...",           // Email of user making the change
+  "updated_time": "..."          // Timestamp (auto-updated by CRUD)
+}
+Key Rules from Your Requirements
+username is unique — use this for queries.
+
+updated_by → must be a valid email.
+
+updated_time → auto-managed in CRUD actions.
+
+While creating/updating:
+
+No duplicates for "name" in column_state, sort_model, filter_model.
+
+Data should be validated before insert/update.
+
+API must be futuristic — easily extendable to new services.
+
+PostgreSQL connection with a clean structure.
+
+2. Proposed Folder Structure
+app/
+│
+├── main.py                         # FastAPI app entry point
+├── core/
+│   ├── config.py                    # App & DB settings
+│   ├── database.py                  # PostgreSQL connection
+│
+├── models/
+│   └── perspective_model.py         # SQLAlchemy ORM models
+│
+├── schemas/
+│   ├── perspective_schemas.py       # Pydantic models (request/response)
+│   └── perspective_schemas_validation.py # Extra validation logic
+│
+├── services/
+│   └── perspective_service.py       # Business logic for CRUD
+│
+├── routes/
+│   └── perspective_route.py         # API endpoints
+│
+└── utils/
+    └── validators.py                 # Email, duplicate name checks, etc.
+3. CRUD API Code Example
+core/config.py
+import os
+from pydantic import BaseSettings
+
+class Settings(BaseSettings):
+    DB_URL: str = os.getenv("DB_URL", "postgresql+psycopg2://user:password@localhost:5432/mydb")
+
+settings = Settings()
+core/database.py
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from .config import settings
+
+engine = create_engine(settings.DB_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+models/perspective_model.py
+from sqlalchemy import Column, String, JSON, TIMESTAMP, func
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
+from core.database import Base
+
+class Perspective(Base):
+    __tablename__ = "perspectives"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String, unique=True, nullable=False)
+    layout_name = Column(String, nullable=False)
+
+    column_state = Column(JSON, default=list)
+    sort_model = Column(JSON, default=list)
+    filter_model = Column(JSON, default=dict)
+
+    updated_by = Column(String, nullable=False)
+    updated_time = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+schemas/perspective_schemas.py
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Dict, Optional, Any
+from datetime import datetime
+
+class ColumnState(BaseModel):
+    name: str
+    view: str
+    defaultColumns: List[str]
+    default: bool
+
+class SortModel(BaseModel):
+    name: str
+    view: str
+    filters: Dict[str, Any]
+    default: bool
+
+class PerspectiveBase(BaseModel):
+    username: str
+    layout_name: str
+    column_state: List[ColumnState] = []
+    sort_model: List[SortModel] = []
+    filter_model: Dict[str, Any] = {}
+
+class PerspectiveCreate(PerspectiveBase):
+    updated_by: EmailStr
+
+class PerspectiveUpdate(PerspectiveBase):
+    updated_by: EmailStr
+
+class PerspectiveOut(PerspectiveBase):
+    id: str
+    updated_by: EmailStr
+    updated_time: datetime
+
+    class Config:
+        orm_mode = True
+utils/validators.py
+def check_duplicate_names(items, field_name="name"):
+    names = [item[field_name] for item in items]
+    if len(names) != len(set(names)):
+        raise ValueError(f"Duplicate '{field_name}' found in list")
+services/perspective_service.py
+from sqlalchemy.orm import Session
+from models.perspective_model import Perspective
+from utils.validators import check_duplicate_names
+from schemas.perspective_schemas import PerspectiveCreate, PerspectiveUpdate
+
+def get_by_username(db: Session, username: str):
+    return db.query(Perspective).filter(Perspective.username == username).first()
+
+def create_perspective(db: Session, data: PerspectiveCreate):
+    check_duplicate_names([c.dict() for c in data.column_state])
+    check_duplicate_names([s.dict() for s in data.sort_model])
+
+    new_item = Perspective(**data.dict())
+    db.add(new_item)
+    db.commit()
+    db.refresh(new_item)
+    return new_item
+
+def update_perspective(db: Session, username: str, data: PerspectiveUpdate):
+    item = get_by_username(db, username)
+    if not item:
+        return None
+
+    check_duplicate_names([c.dict() for c in data.column_state])
+    check_duplicate_names([s.dict() for s in data.sort_model])
+
+    for key, value in data.dict().items():
+        setattr(item, key, value)
+
+    db.commit()
+    db.refresh(item)
+    return item
+
+def delete_perspective(db: Session, username: str):
+    item = get_by_username(db, username)
+    if item:
+        db.delete(item)
+        db.commit()
+        return True
+    return False
+routes/perspective_route.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from core.database import SessionLocal
+from schemas.perspective_schemas import PerspectiveCreate, PerspectiveUpdate, PerspectiveOut
+from services import perspective_service as service
+
+router = APIRouter(prefix="/perspectives", tags=["Perspectives"])
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@router.get("/{username}", response_model=PerspectiveOut)
+def get_perspective(username: str, db: Session = Depends(get_db)):
+    item = service.get_by_username(db, username)
+    if not item:
+        raise HTTPException(status_code=404, detail="Perspective not found")
+    return item
+
+@router.post("/", response_model=PerspectiveOut)
+def create_perspective(data: PerspectiveCreate, db: Session = Depends(get_db)):
+    return service.create_perspective(db, data)
+
+@router.put("/{username}", response_model=PerspectiveOut)
+def update_perspective(username: str, data: PerspectiveUpdate, db: Session = Depends(get_db)):
+    updated_item = service.update_perspective(db, username, data)
+    if not updated_item:
+        raise HTTPException(status_code=404, detail="Perspective not found")
+    return updated_item
+
+@router.delete("/{username}")
+def delete_perspective(username: str, db: Session = Depends(get_db)):
+    if not service.delete_perspective(db, username):
+        raise HTTPException(status_code=404, detail="Perspective not found")
+    return {"message": "Perspective deleted successfully"}
+main.py
+from fastapi import FastAPI
+from routes import perspective_route
+
+app = FastAPI(title="Perspective CRUD API")
+
+app.include_router(perspective_route.router)
+✅ Features implemented:
+
+PostgreSQL connection (SQLAlchemy).
+
+username uniqueness.
+
+Duplicate name prevention in arrays.
+
+Email validation for updated_by.
+
+Auto-update of updated_time.
+
+Clean folder structure for adding more APIs.
+
+Fully working FastAPI CRUD.
+
+If you want, I can also add automatic Alembic migrations and unit tests so this API is production-ready.
+Do you want me to extend it that way?
+
+
+
+
+
+
+No file chosenNo file chosen
+ChatGPT can make mistakes. Check important info. See Cookie Preferences.

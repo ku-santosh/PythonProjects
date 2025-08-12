@@ -1,0 +1,340 @@
+Skip to content
+Chat history
+
+You said:
+{
+	"id": "...",
+	"username": "...",
+	"layout_name": "...",
+	column_state = [{
+		"name": "Skg",
+		"view": "reconciliations",
+		"defaultColumns": [
+			"forcedEscalated", "businessUnit", "cif", "reClass", "riskEventType", 
+			"reAmount", "reAmountCurrency", "priority", "reClassification", 
+			"resolutionDate", "aging"
+		],
+		"default": False
+	}]
+	sort_model = [{
+		"name": "CCY",
+		"view": "reconciliations",
+		"filters": {"Default11_reAmountCurrency": {"type": "contains", "filter": "AUD"}},
+		"default": False
+	}]
+	filter_model = {}
+	"updated_by": "...",
+	"updated_time": "..."
+}
+
+Analyze the data in JSON that was shared
+
+
+Build a perspective CRUD api code with the best application folder structure with perspective_route, perspective_schemas, perspective_schemas_validation should take care and not empty or null "username" "layout_name" "updated_by", perspective_service, postgresql DB connection, models in Python according to the PostgreSQL database and JSON code, which should select data by username and generate code edit, update, create, and delete "column_state", "sort_model," "filter_model" because "username" will also be a unique name like id "updated_time" will be updated as per CRUD action also handle while updating and creating "column_state", "sort_model," "filter_model" data by name value in every object should be verfy, and while making, no duplicates with the same name, "updated_by" should be email and "updated_time" taken care by CRUD action. API should be futuristic so we can add more API in the main or app files with other services.
+ChatGPT said:
+Got it — you want me to break down the JSON first, then design a futuristic Python CRUD API with a clean folder structure that can scale to more services later.
+I’ll also make sure the validations and duplicate checks for column_state, sort_model, and filter_model are included, and that updated_time is always auto-managed.
+
+Step 1 — Understanding Your JSON
+Here’s your data, with corrections (since JSON doesn’t support = for key-value pairs, I replaced them with :):
+
+{
+    "id": "...",
+    "username": "...",
+    "layout_name": "...",
+    "column_state": [
+        {
+            "name": "Skg",
+            "view": "reconciliations",
+            "defaultColumns": [
+                "forcedEscalated", "businessUnit", "cif", "reClass", "riskEventType", 
+                "reAmount", "reAmountCurrency", "priority", "reClassification", 
+                "resolutionDate", "aging"
+            ],
+            "default": false
+        }
+    ],
+    "sort_model": [
+        {
+            "name": "CCY",
+            "view": "reconciliations",
+            "filters": {
+                "Default11_reAmountCurrency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                }
+            },
+            "default": false
+        }
+    ],
+    "filter_model": {},
+    "updated_by": "...",
+    "updated_time": "..."
+}
+Key observations:
+
+username will act like a unique identifier (like id).
+
+column_state, sort_model, and filter_model are arrays/objects with subfields.
+
+When creating or updating, we must:
+
+Check that username, layout_name, and updated_by are not null or empty.
+
+Ensure updated_by is a valid email.
+
+Prevent duplicate "name" values inside each array.
+
+Update updated_time automatically.
+
+The API will need CRUD operations for the full object and its nested arrays.
+
+Step 2 — Proposed Folder Structure
+We’ll make it futuristic and easily extensible for more services later:
+
+app/
+│
+├── main.py                     # Entry point
+├── core/
+│   ├── config.py                # Settings, DB URL, etc.
+│   ├── database.py              # PostgreSQL connection
+│
+├── models/
+│   └── perspective_models.py    # SQLAlchemy models
+│
+├── schemas/
+│   ├── perspective_schemas.py   # Pydantic schemas
+│   └── perspective_validation.py # Extra validation logic
+│
+├── services/
+│   └── perspective_service.py   # CRUD service logic
+│
+├── routes/
+│   └── perspective_route.py     # API endpoints
+│
+└── utils/
+    └── validators.py            # Email, duplicate check, etc.
+Step 3 — PostgreSQL Model
+models/perspective_models.py
+
+from sqlalchemy import Column, String, JSON, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+class Perspective(Base):
+    __tablename__ = "perspectives"
+
+    id = Column(String, primary_key=True)
+    username = Column(String, unique=True, nullable=False)
+    layout_name = Column(String, nullable=False)
+    column_state = Column(JSON, nullable=True)
+    sort_model = Column(JSON, nullable=True)
+    filter_model = Column(JSON, nullable=True)
+    updated_by = Column(String, nullable=False)
+    updated_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+Step 4 — Pydantic Schema + Validation
+schemas/perspective_schemas.py
+
+from pydantic import BaseModel, Field, EmailStr, validator
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+class ColumnState(BaseModel):
+    name: str
+    view: str
+    defaultColumns: List[str]
+    default: bool
+
+class SortModel(BaseModel):
+    name: str
+    view: str
+    filters: Dict[str, Any]
+    default: bool
+
+class PerspectiveBase(BaseModel):
+    username: str = Field(..., min_length=1)
+    layout_name: str = Field(..., min_length=1)
+    column_state: Optional[List[ColumnState]] = []
+    sort_model: Optional[List[SortModel]] = []
+    filter_model: Optional[Dict[str, Any]] = {}
+    updated_by: EmailStr
+
+    @validator("column_state", "sort_model", each_item=False)
+    def unique_names(cls, v):
+        if v:
+            names = [item.name for item in v]
+            if len(names) != len(set(names)):
+                raise ValueError("Duplicate 'name' values are not allowed.")
+        return v
+
+class PerspectiveCreate(PerspectiveBase):
+    pass
+
+class PerspectiveUpdate(PerspectiveBase):
+    pass
+
+class PerspectiveResponse(PerspectiveBase):
+    id: str
+    updated_time: datetime
+Step 5 — CRUD Service
+services/perspective_service.py
+
+from sqlalchemy.orm import Session
+from models.perspective_models import Perspective
+from schemas.perspective_schemas import PerspectiveCreate, PerspectiveUpdate
+from datetime import datetime
+import uuid
+
+def get_by_username(db: Session, username: str):
+    return db.query(Perspective).filter(Perspective.username == username).first()
+
+def create(db: Session, data: PerspectiveCreate):
+    if get_by_username(db, data.username):
+        raise ValueError("Username already exists.")
+    db_item = Perspective(
+        id=str(uuid.uuid4()),
+        username=data.username,
+        layout_name=data.layout_name,
+        column_state=data.column_state,
+        sort_model=data.sort_model,
+        filter_model=data.filter_model,
+        updated_by=data.updated_by,
+        updated_time=datetime.utcnow()
+    )
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+def update(db: Session, username: str, data: PerspectiveUpdate):
+    db_item = get_by_username(db, username)
+    if not db_item:
+        raise ValueError("Perspective not found.")
+    db_item.layout_name = data.layout_name
+    db_item.column_state = data.column_state
+    db_item.sort_model = data.sort_model
+    db_item.filter_model = data.filter_model
+    db_item.updated_by = data.updated_by
+    db_item.updated_time = datetime.utcnow()
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+def delete(db: Session, username: str):
+    db_item = get_by_username(db, username)
+    if not db_item:
+        raise ValueError("Perspective not found.")
+    db.delete(db_item)
+    db.commit()
+Step 6 — API Routes
+routes/perspective_route.py
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from core.database import get_db
+from schemas.perspective_schemas import PerspectiveCreate, PerspectiveUpdate, PerspectiveResponse
+from services import perspective_service
+
+router = APIRouter(prefix="/perspectives", tags=["Perspectives"])
+
+@router.get("/{username}", response_model=PerspectiveResponse)
+def get_perspective(username: str, db: Session = Depends(get_db)):
+    result = perspective_service.get_by_username(db, username)
+    if not result:
+        raise HTTPException(status_code=404, detail="Not found")
+    return result
+
+@router.post("/", response_model=PerspectiveResponse)
+def create_perspective(data: PerspectiveCreate, db: Session = Depends(get_db)):
+    try:
+        return perspective_service.create(db, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.put("/{username}", response_model=PerspectiveResponse)
+def update_perspective(username: str, data: PerspectiveUpdate, db: Session = Depends(get_db)):
+    try:
+        return perspective_service.update(db, username, data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/{username}")
+def delete_perspective(username: str, db: Session = Depends(get_db)):
+    try:
+        perspective_service.delete(db, username)
+        return {"message": "Deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+Step 7 — Main App
+main.py
+
+from fastapi import FastAPI
+from routes import perspective_route
+from core.database import Base, engine
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Perspective API", version="1.0.0")
+
+app.include_router(perspective_route.router)
+✅ Features included:
+
+Validation for required fields & email format.
+
+No duplicate names in column_state or sort_model.
+
+updated_time is always set automatically.
+
+PostgreSQL integration with SQLAlchemy.
+
+Modular & scalable folder structure for adding more APIs later.
+
+If you want, I can now give you the PostgreSQL table creation SQL script so the DB is ready for this API.
+Do you want me to prepare that next?
+
+You said:
+yes
+ChatGPT said:
+Alright — here’s the PostgreSQL table creation script for the perspectives table that matches the models we used in the API code.
+
+SQL Script
+CREATE TABLE perspectives (
+    id VARCHAR(36) PRIMARY KEY, -- UUID string
+    username VARCHAR(255) UNIQUE NOT NULL,
+    layout_name VARCHAR(255) NOT NULL,
+    column_state JSONB,
+    sort_model JSONB,
+    filter_model JSONB,
+    updated_by VARCHAR(255) NOT NULL,
+    updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+Explanation
+id: UUID string (matches Python uuid4() generation).
+
+username: Must be unique and non-null.
+
+layout_name: Required.
+
+column_state, sort_model, filter_model: Stored as JSONB for flexible querying and indexing.
+
+updated_by: Required, stores the email of the last updater.
+
+updated_time: Defaults to the current timestamp; also updated on any change by the service logic.
+
+Optional — Index for JSONB Queries
+If you plan to search inside column_state or sort_model often:
+
+CREATE INDEX idx_perspectives_column_state ON perspectives USING GIN (column_state);
+CREATE INDEX idx_perspectives_sort_model ON perspectives USING GIN (sort_model);
+I can also give you a migration script so you can manage table changes with Alembic, keeping it in sync with the API automatically.
+Do you want me to prepare that?
+
+
+
+
+
+
+No file chosenNo file chosen
+ChatGPT can make mistakes. Check important info. See Cookie Preferences.

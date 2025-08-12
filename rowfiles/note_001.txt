@@ -1,0 +1,120 @@
+CREATE USER 'root'@'localhost' IDENTIFIED BY 'Sant@023';
+
+CREATE DATABASE auth;
+
+GRANT ALL PRIVILEGES ON auth.* TO 'root'@'localhost';
+#GRANT ALL PRIVILEGES ON auth.* TO 'root'@'localhost';
+
+USE auth;
+
+CREATE TABLE user (
+  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL
+);
+
+INSERT INTO user (email, password) VALUES ('georgio@email.com', 'Admin123');
+
+  
+
+G:\Learning-Skills\PythonProjects\microservices-python-main\src\auth>mysql -u root -p
+Enter password: ********
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 55
+Server version: 8.0.43 MySQL Community Server - GPL
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+
+
+mysql -uroot < init.sql
+mysql> show databases;
++--------------------+
+| Database           |
++--------------------+
+| auth               |
+| information_schema |
+| mysql              |
+| performance_schema |
+| sakila             |
+| sys                |
+| world              |
++--------------------+
+7 rows in set (0.07 sec)
+
+mysql> use auth
+Database changed
+mysql> show tables;
++----------------+
+| Tables_in_auth |
++----------------+
+| user           |
++----------------+
+1 row in set (0.03 sec)
+
+mysql> describe user;
++----------+--------------+------+-----+---------+----------------+
+| Field    | Type         | Null | Key | Default | Extra          |
++----------+--------------+------+-----+---------+----------------+
+| id       | int          | NO   | PRI | NULL    | auto_increment |
+| email    | varchar(255) | NO   | UNI | NULL    |                |
+| password | varchar(255) | NO   |     | NULL    |                |
++----------+--------------+------+-----+---------+----------------+
+
+mysql> select * from user;
++----+-------------------+----------+
+| id | email             | password |
++----+-------------------+----------+
+|  1 | santosh@email.com | Admin123 |
++----+-------------------+----------+
+1 row in set (0.00 sec)
+
+
+/******************************************************************************/
+pip3 freeze > requirements.txt
+G:\Learning-Skills\PythonProjects\microservices-python-main\src\auth>docker build .
+
+
+ => exporting to image                                                                                                                                                                                       12.3s
+ => => exporting layers                                                                                                                                                                                       5.7s
+ => => exporting manifest sha256:866d01336abde0b38ae80adcae8ad70473afeddebca4939ab45920ee127ad547                                                                                                             0.0s
+ => => exporting config sha256:69f3ede6843f2a276933231e2def30aeef93abf289b7fbbccc0f982a157beca9                                                                                                               0.0s
+ => => exporting attestation manifest sha256:59ce95ec024651df706a21edba50dab7abcb33e3bc5f61dacc9123186e6cc7b9                                                                                                 0.1s
+ => => exporting manifest list sha256:c3913981c9b372289c86be6dde23e448e4300f30199d52a86d0c0514f28e591f                                                                                                        0.1s
+ => => naming to moby-dangling@sha256:c3913981c9b372289c86be6dde23e448e4300f30199d52a86d0c0514f28e591f                                                                                                        0.0s
+ => => unpacking to moby-dangling@sha256:c3913981c9b372289c86be6dde23e448e4300f30199d52a86d0c0514f28e591f                                                                                                     6.1s
+
+View build details: docker-desktop://dashboard/build/desktop-linux/desktop-linux/f6yzbytk4v9i45min8ljv3qgd
+
+G:\Learning-Skills\PythonProjects\microservices-python-main\src\auth>docker tag <image sha256:<code>>
+docker tag c3913981c9b372289c86be6dde23e448e4300f30199d52a86d0c0514f28e591f skg023/auth:latest
+docker push skg023/auth:<tagname>
+docker push skg023/auth:latest
+G:\Learning-Skills\PythonProjects\microservices-python-main\src\auth\manifests>minikube start
+G:\Learning-Skills\PythonProjects\microservices-python-main\src\auth\manifests>kubectl apply -f ./
+
+
+/***********************************************************************************/
+mkdir gateway
+python -m venv venv
+source .venv/bin/active
+env | grep ENV
+python3 install jedi
+pip install pylint
+cat server.py
+pip install pika
+pip install pyMongo
+pip install Flask-PyMongo
+pip install requests
+env | grep ENV
+
+sudo vim etc/hosts
+
+
+
