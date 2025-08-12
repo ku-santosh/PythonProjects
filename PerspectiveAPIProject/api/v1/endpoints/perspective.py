@@ -1,49 +1,87 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from flask import Blueprint, jsonify, request
+import psycopg2
+from pydantic import ValidationError
 from typing import List
-from api.database.database import get_db
-from api.schemas.perspective import Perspective, PerspectiveCreate, PerspectiveUpdate
-from api.services.perspective import PerspectiveService
+from ...database.database import get_db
+from ...schemas.perspective import Perspective, PerspectiveCreate, PerspectiveUpdate
+from ...services.perspective import PerspectiveService
 
-# Create an APIRouter for this module
-router = APIRouter()
+# Create a Blueprint for this module
+perspective_bp = Blueprint('perspective_bp', __name__)
 
-@router.get("/perspectives/", response_model=List[Perspective])
-async def get_all(db: AsyncSession = Depends(get_db)):
+
+@perspective_bp.route("/perspectives/", methods=["GET"])
+def get_all():
     """Retrieves all perspectives from the database."""
-    service = PerspectiveService(db)
-    perspectives = await service.get_all_perspectives()
-    return perspectives
+    conn, curr = get_db()
+    try:
+        service = PerspectiveService(conn, curr)
+        perspectives = service.get_all_perspectives()
+        # The serializer in the Perspective schema now expects a dictionary-like object,
+        # which our DTO provides.
+        return jsonify([Perspective(**p.__dict__).model_dump() for p in perspectives])
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
 
-@router.get("/perspectives/{perspective_id}", response_model=Perspective)
-async def get_by_id(perspective_id: int, db: AsyncSession = Depends(get_db)):
+
+@perspective_bp.route("/perspectives/<int:perspective_id>", methods=["GET"])
+def get_by_id(perspective_id: int):
     """Retrieves a single perspective by its ID."""
-    service = PerspectiveService(db)
-    perspective = await service.get_perspective_by_id(perspective_id)
-    if not perspective:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Perspective not found")
-    return perspective
+    conn, curr = get_db()
+    try:
+        service = PerspectiveService(conn, curr)
+        perspective = service.get_perspective_by_id(perspective_id)
+        if not perspective:
+            return jsonify({"detail": "Perspective not found"}), 404
+        return jsonify(Perspective(**perspective.__dict__).model_dump())
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
 
-@router.post("/perspectives/", response_model=Perspective, status_code=status.HTTP_201_CREATED)
-async def create(perspective_in: PerspectiveCreate, db: AsyncSession = Depends(get_db)):
+
+@perspective_bp.route("/perspectives/", methods=["POST"])
+def create():
     """Creates a new perspective in the database."""
-    service = PerspectiveService(db)
-    new_perspective = await service.create_perspective(perspective_in)
-    return new_perspective
+    conn, curr = get_db()
+    try:
+        perspective_in = PerspectiveCreate(**request.json)
+    except ValidationError as e:
+        return jsonify({"detail": e.errors()}), 422
 
-@router.put("/perspectives/{perspective_id}", response_model=Perspective)
-async def update(perspective_id: int, perspective_in: PerspectiveUpdate, db: AsyncSession = Depends(get_db)):
+    try:
+        service = PerspectiveService(conn, curr)
+        new_perspective = service.create_perspective(perspective_in)
+        return jsonify(Perspective(**new_perspective.__dict__).model_dump()), 201
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+@perspective_bp.route("/perspectives/<int:perspective_id>", methods=["PUT"])
+def update(perspective_id: int):
     """Updates an existing perspective by its ID."""
-    service = PerspectiveService(db)
-    updated_perspective = await service.update_perspective(perspective_id, perspective_in)
-    if not updated_perspective:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Perspective not found")
-    return updated_perspective
+    conn, curr = get_db()
+    try:
+        perspective_in = PerspectiveUpdate(**request.json)
+    except ValidationError as e:
+        return jsonify({"detail": e.errors()}), 422
 
-@router.delete("/perspectives/{perspective_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete(perspective_id: int, db: AsyncSession = Depends(get_db)):
+    try:
+        service = PerspectiveService(conn, curr)
+        updated_perspective = service.update_perspective(perspective_id, perspective_in)
+        if not updated_perspective:
+            return jsonify({"detail": "Perspective not found"}), 404
+        return jsonify(Perspective(**updated_perspective.__dict__).model_dump())
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+@perspective_bp.route("/perspectives/<int:perspective_id>", methods=["DELETE"])
+def delete(perspective_id: int):
     """Deletes a perspective by its ID."""
-    service = PerspectiveService(db)
-    if not await service.delete_perspective(perspective_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Perspective not found")
-    return
+    conn, curr = get_db()
+    try:
+        service = PerspectiveService(conn, curr)
+        if not service.delete_perspective(perspective_id):
+            return jsonify({"detail": "Perspective not found"}), 404
+        return "", 204
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500

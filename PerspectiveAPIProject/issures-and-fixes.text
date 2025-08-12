@@ -1,0 +1,372 @@
+getting error while heating post perspectives route
+
+error is below
+
+<title>415 Unsupported Media Type</title>
+
+<h1>Unsupported Media Type</h1>
+
+<p>Did not attempt to load JSON data because the request Content-Type was not &#39;application/json&#39;.</p>
+
+
+
+The "415 Unsupported Media Type" error is happening because your Flask application is correctly expecting to receive a request with the Content-Type header set to application/json, but the tool you're using to make the request isn't sending it.
+
+Essentially, the server is saying, "I'm not sure how to process this data because you didn't tell me what format it's in."
+
+To fix this, you need to ensure that whatever tool you're using to send the POST request explicitly includes the Content-Type header.
+
+For example, if you're using a command-line tool like curl, your command should look something like this:
+
+Bash
+
+curl -X POST -H "Content-Type: application/json" -d '{
+    "username": "testuser",
+    "layout_name": "Test Layout",
+    "updated_by": "test@example.com",
+    "column_state": [],
+    "sort_model": [],
+    "filter_model": []
+}' http://127.0.0.1:5000/api/v1/perspectives/
+The key part is -H "Content-Type: application/json", which tells the server that the data being sent (-d) is in JSON format.
+
+If you're using another tool like Postman or writing your own script, just look for the option to set the Content-Type header in your request.
+
+
+
+
+
+
+another error here
+
+<title>400 Bad Request</title>
+
+<h1>Bad Request</h1>
+
+<p>Failed to decode JSON object: Expecting value: line 1 column 1 (char 0)</p>
+
+
+
+It seems like you've fixed the Content-Type header, which is great! This new error, 400 Bad Request: Failed to decode JSON object, indicates a different problem with your request.
+
+This message means that Flask received the request and saw that it was supposed to be JSON, but when it tried to read the request's body, it found that the content was either empty or wasn't formatted as valid JSON. The specific error "Expecting value: line 1 column 1 (char 0)" tells us that the parser didn't even find the first character of a valid JSON object, which should be { or [.
+
+To fix this, you need to make sure your request body contains a complete and correctly-formatted JSON object.
+
+For example, if you're using curl, your command should look like this, ensuring the data (-d) is included and properly structured:
+
+Bash
+
+curl -X POST -H "Content-Type: application/json" -d '{
+    "username": "testuser",
+    "layout_name": "Test Layout",
+    "updated_by": "test@example.com",
+    "column_state": [],
+    "sort_model": [],
+    "filter_model": []
+}' http://127.0.0.1:5000/api/v1/perspectives/
+Double-check the tool you're using to make the request to ensure that the JSON payload is not empty and is enclosed in the proper single or double quotes.
+
+
+
+
+
+
+passing data in postman as params
+
+getting same error
+
+
+It sounds like the issue is with how Postman is sending the data, not with the code itself.
+
+The 400 Bad Request error with the message "Failed to decode JSON object" means that Flask received your request but found that the body was either empty or wasn't formatted as valid JSON. This happens when you use "params" or "form-data" in Postman, as these methods do not send a JSON body.
+
+To fix this, you need to tell Postman to send the data as a raw JSON object. Here's how you can set it up correctly:
+
+In Postman, select the Body tab.
+
+Choose the raw radio button.
+
+From the dropdown menu on the right, select JSON.
+
+Paste the following valid JSON payload into the text area:
+
+JSON
+
+{
+    "username": "testuser",
+    "layout_name": "Test Layout",
+    "updated_by": "test@example.com",
+    "column_state": [],
+    "sort_model": [],
+    "filter_model": []
+}
+By following these steps, your request will include the proper Content-Type: application/json header and a correctly formatted JSON body, which is exactly what the Flask endpoint expects.
+
+
+
+
+
+
+now getting new error
+
+{
+
+    "detail": "null value in column \"id\" of relation \"perspectives\" violates not-null constraint\nDETAIL:  Failing row contains (null, testuser, Test Layout, [], [], [], test@example.com, 2025-08-13 00:05:13.914889).\n"
+
+}
+
+
+
+That's a very clear error message! It tells us exactly what the problem is, and it isn't with the Python code itself, but with your database setup.
+
+The error null value in column "id" of relation "perspectives" violates not-null constraint means that your INSERT query is trying to create a new row in the perspectives table, but the id column is receiving a NULL value, which the table's definition doesn't allow.
+
+This happens when the id column, which should be an automatically generated primary key, is not configured as an AUTOINCREMENT or SERIAL type. The database is waiting for you to provide the id manually, but our Python code is correctly omitting it because it's a field that should be generated by the database.
+
+How to Fix the Issue
+To resolve this, you need to update your perspectives table schema to ensure the id column is a SERIAL primary key. This tells the database to automatically assign a new, unique ID for every new row.
+
+Here is the SQL command you can run in your PostgreSQL client (like psql or DBeaver) to fix the table.
+
+SQL
+
+ALTER TABLE recsui.perspectives
+ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (START WITH 1 INCREMENT BY 1);
+
+ALTER TABLE recsui.perspectives
+ADD PRIMARY KEY (id);
+What this does:
+
+The first ALTER TABLE statement modifies the id column to be a GENERATED BY DEFAULT AS IDENTITY column. This is the modern, standard way to create an auto-incrementing column in PostgreSQL.
+
+The second ALTER TABLE statement sets the id column as the primary key for the table.
+
+Once you run these commands, your Python code should work perfectly because the database will now automatically handle the id for every new perspective you create.
+
+
+
+
+
+
+sql code not workin in postgrase database
+
+
+I'm sorry to hear the SQL code didn't work as expected. That's a common issue, as the exact syntax can depend on your specific PostgreSQL version or the current state of your table.
+
+The previous command likely failed because the id column was already defined as a primary key, or it had some other attribute that prevented it from being altered.
+
+Let's try a different approach that should be more robust.
+
+Option 1: Alter the Existing Column
+This is the cleanest approach. It tries to modify the existing id column to be auto-incrementing. The first part removes any existing primary key constraint, and the second part adds the new IDENTITY property.
+
+SQL
+
+-- Step 1: Remove any existing primary key constraint on the 'id' column
+ALTER TABLE recsui.perspectives DROP CONSTRAINT perspectives_pkey;
+
+-- Step 2: Make the 'id' column an auto-incrementing identity column
+ALTER TABLE recsui.perspectives
+ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (START WITH 1 INCREMENT BY 1);
+
+-- Step 3: Re-add the primary key constraint
+ALTER TABLE recsui.perspectives
+ADD PRIMARY KEY (id);
+Option 2: Recreate the Table (The Guaranteed Fix)
+If the first option still doesn't work, the most reliable solution is to drop the table and recreate it with the correct column definitions from the start.
+
+Warning: This will permanently delete all data in your recsui.perspectives table. Only use this if you don't have any data you need to keep.
+
+SQL
+
+-- Step 1: Drop the old table
+DROP TABLE IF EXISTS recsui.perspectives;
+
+-- Step 2: Recreate the table with the correct primary key
+CREATE TABLE recsui.perspectives (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    layout_name VARCHAR(255) NOT NULL,
+    updated_by VARCHAR(255) NOT NULL,
+    column_state JSONB DEFAULT '[]'::JSONB,
+    sort_model JSONB DEFAULT '[]'::JSONB,
+    filter_model JSONB DEFAULT '[]'::JSONB,
+    updated_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+I would suggest trying Option 1 first, as it's less destructive. If that fails, Option 2 will almost certainly resolve the issue for you. Let me know which one works for you, and we can move on to testing the other endpoints.
+
+
+
+
+
+
+in body sendind data which below
+
+
+
+{
+
+username:"49056020"
+
+layout_name:"reconciliationsView"
+
+updated_by:"skg@gmail.com"
+
+column_state:[{"name": "Skg","view": "reconciliations","defaultColumns": ["forcedEscalated","businessUnit","cif","reClass","riskEventType"],"default": false},{"name": "Skg111","view": "reconciliations","defaultColumns": ["forcedEscalated","businessUnit","cif","reClass"],"default": true}]
+
+sort_model:[{"name": "CCY","view": "reconciliations","filters": {  "Default11_reAmountCurrency": {"type": "contains","filter": "AUD"  },"Default11_Currency": {"type": "contains","filter": "AUD"  }},"default": false},{"name": "CCY2","view": "reconciliations","filters": {  "Default11_reAmountCurrency": {"type": "contains","filter": "AUD"  },"Default11_Currency": {"type": "contains","filter": "AUD"  }},"default": true}]
+
+filter_model:[{"name": "CCY","view": "reconciliations","filters": {  "Default11_reAmountCurrency": {"type": "contains","filter": "AUD"  },"Default11_Currency": {"type": "contains","filter": "AUD"  }},"default": false},{"name": "CCY2","view": "reconciliations","filters": {  "Default11_reAmountCurrency": {"type": "contains","filter": "AUD"  },"Default11_Currency": {"type": "contains","filter": "AUD"  }},"default": true}]
+
+}
+
+
+You stopped this response
+
+
+
+
+
+
+<title>400 Bad Request</title>
+
+<h1>Bad Request</h1>
+
+<p>Failed to decode JSON object: Expecting property name enclosed in double quotes: line 2 column 1 (char 3)</p>
+
+
+
+This is another common JSON syntax error!
+
+The error message, "Failed to decode JSON object: Expecting property name enclosed in double quotes," tells us exactly what's wrong with the data you're sending. In valid JSON, all property names (the keys) and any string values must be enclosed in double quotes (").
+
+The data you provided looks like this:
+
+JSON
+
+{
+username:"49056020"
+layout_name:"reconciliationsView"
+...
+}
+The problem is that username and "49056020" both need to be in double quotes.
+
+Here is the corrected, valid JSON that you should use in the Postman body (remember to set the body type to raw and the format to JSON):
+
+JSON
+
+{
+    "username": "49056020",
+    "layout_name": "reconciliationsView",
+    "updated_by": "skg@gmail.com",
+    "column_state": [
+        {
+            "name": "Skg",
+            "view": "reconciliations",
+            "defaultColumns": [
+                "forcedEscalated",
+                "businessUnit",
+                "cif",
+                "reClass",
+                "riskEventType"
+            ],
+            "default": false
+        },
+        {
+            "name": "Skg111",
+            "view": "reconciliations",
+            "defaultColumns": [
+                "forcedEscalated",
+                "businessUnit",
+                "cif",
+                "reClass"
+            ],
+            "default": true
+        }
+    ],
+    "sort_model": [
+        {
+            "name": "CCY",
+            "view": "reconciliations",
+            "filters": {
+                "Default11_reAmountCurrency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                },
+                "Default11_Currency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                }
+            },
+            "default": false
+        },
+        {
+            "name": "CCY2",
+            "view": "reconciliations",
+            "filters": {
+                "Default11_reAmountCurrency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                },
+                "Default11_Currency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                }
+            },
+            "default": true
+        }
+    ],
+    "filter_model": [
+        {
+            "name": "CCY",
+            "view": "reconciliations",
+            "filters": {
+                "Default11_reAmountCurrency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                },
+                "Default11_Currency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                }
+            },
+            "default": false
+        },
+        {
+            "name": "CCY2",
+            "view": "reconciliations",
+            "filters": {
+                "Default11_reAmountCurrency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                },
+                "Default11_Currency": {
+                    "type": "contains",
+                    "filter": "AUD"
+                }
+            },
+            "default": true
+        }
+    ]
+}
+Please copy and paste this corrected version into Postman. If the id column in your database is now correctly set as SERIAL, this should resolve the issue and successfully create the new entry.
+
+
+SELECT id, username, layout_name, column_state, sort_model, filter_model, updated_by, updated_time
+	FROM recsui.perspectives;
+	
+-- Step 1: Drop the old table
+DROP TABLE IF EXISTS recsui.perspectives;
+
+-- Step 2: Recreate the table with the correct primary key
+CREATE TABLE recsui.perspectives (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    layout_name VARCHAR(255) NOT NULL,
+    updated_by VARCHAR(255) NOT NULL,
+    column_state JSONB DEFAULT '[]'::JSONB,
+    sort_model JSONB DEFAULT '[]'::JSONB,
+    filter_model JSONB DEFAULT '[]'::JSONB,
+    updated_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);	

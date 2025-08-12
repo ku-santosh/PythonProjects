@@ -1,67 +1,68 @@
 import os
-from typing import Any, AsyncGenerator
-
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import text
-
-""" 
 import psycopg2
+from psycopg2.extras import DictCursor, register_uuid
+from psycopg2.extensions import connection, cursor
+from flask import g
+from typing import Tuple
 
-try:
-    conn = psycopg2.connect(
-        host="localhost",
-        port=5432,
-        database="skg023",
-        user="postgres",
-        password="232222"
-    )
-    print("Connection to PostgreSQL successful!")
+# Register UUID support for psycopg2
+register_uuid()
 
-    # You can now create a cursor and execute queries
-    # cur = conn.cursor()
-    # cur.execute("SELECT version();")
-    # print(cur.fetchone())
+# Database connection details (replace with your actual details or environment variables).
+DB_NAME = "skg023"
+DB_USER = "postgres"
+DB_PASSWORD = "232222"
+DB_HOST = "localhost"
+DB_PORT = "5432"
+DB_SCHEMA = "recsui"
 
-except psycopg2.Error as e:
-    print(f"Error connecting to PostgreSQL: {e}")
 
-finally:
-    if 'conn' in locals() and conn:
+def get_db_connection() -> Tuple[connection, cursor]:
+    """
+    Establishes a connection to the PostgreSQL database and returns
+    both the connection and a cursor object.
+
+    Raises:
+        psycopg2.Error: If the connection fails.
+    """
+    try:
+        conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT,
+        )
+        # Use DictCursor to return query results as dictionaries
+        curr = conn.cursor(cursor_factory=DictCursor)
+        curr.execute(f"SET search_path TO {DB_SCHEMA};")
+        print("Successfully connected to the database.")
+        return conn, curr
+    except psycopg2.Error as e:
+        print(f"Error connecting to the database: {e}")
+        raise
+
+
+def close_db_connection(conn: connection, curr: cursor):
+    """Closes the database cursor and connection."""
+    if curr:
+        curr.close()
+    if conn:
         conn.close()
-        print("PostgreSQL connection closed.")
+    print("Database connection closed.")
 
-"""
 
-# Define the database connection URL.
-# Replace the placeholders with your actual PostgreSQL credentials.
-# The database name 'skg023' and schema 'recsui' are used as specified.
-#DATABASE_URL = "postgresql+asyncpg://user:password@host:5432/skg023"
-DATABASE_URL = "postgresql+asyncpg://postgres:232222@localhost:5432/skg023"
-print(f'DATABASE_URL => ', DATABASE_URL)
-
-# Create the asynchronous database engine
-engine = create_async_engine(DATABASE_URL, echo=True)
-"""
-# You can now use the engine to interact with the database
-with engine.connect() as connection:
-    result = connection.execute(text("SELECT version();"))
-    print(f'result.scalar() => ', result.scalar())
-"""
-
-# Create a sessionmaker for generating new AsyncSession objects
-AsyncSessionLocal = async_sessionmaker(
-    autocommit=False, autoflush=False, bind=engine, class_=AsyncSession
-)
-
-# A base class for declarative models
-Base = declarative_base()
-
-# Dependency function to get a database session
-async def get_db() -> AsyncGenerator[AsyncSession | Any, Any]:
-    """Provides an asynchronous database session for endpoints."""
-    async with AsyncSessionLocal() as session:
+def get_db():
+    """
+    Provides a database connection and cursor that is local to the current request.
+    If they don't exist for the request, it creates new ones.
+    """
+    if 'db_conn' not in g or 'db_curr' not in g:
         try:
-            yield session
-        finally:
-            await session.close()
+            conn, curr = get_db_connection()
+            g.db_conn = conn
+            g.db_curr = curr
+        except psycopg2.Error as e:
+            raise ConnectionError(f"Failed to get database connection: {e}") from e
+
+    return g.db_conn, g.db_curr
