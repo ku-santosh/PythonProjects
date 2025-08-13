@@ -48,7 +48,7 @@ class PerspectiveUpdate(PerspectiveBase):
 # Full schema for a perspective, including auto-generated fields.
 class Perspective(PerspectiveBase):
     id: int
-    updated_time: str
+    updated_time: datetime
 
     class Config:
         from_attributes = True
