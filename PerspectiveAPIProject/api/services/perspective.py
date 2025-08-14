@@ -2,7 +2,7 @@ import psycopg2
 from psycopg2.extras import DictCursor
 from typing import List, Optional
 import json
-from ..models.backup_perspective import Perspective as PerspectiveModel
+from ..models.perspective import Perspective as PerspectiveModel
 from ..schemas.perspective import PerspectiveCreate, PerspectiveUpdate
 from psycopg2.extensions import connection, cursor
 

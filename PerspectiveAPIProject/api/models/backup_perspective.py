@@ -1,6 +1,6 @@
+import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-import json
 
 
 class ColumnState:
@@ -55,18 +55,41 @@ class Perspective:
         if not data:
             return None
 
-        # Recursively create objects for nested data
-        column_state = [ColumnState(**cs) for cs in data.get('column_state', [])]
+        # Manually deserialize JSONB data to handle potential type issues
+        try:
+            column_state_data = json.loads(data.get('column_state', '[]'))
+            column_state = [ColumnState(**cs) for cs in column_state_data]
+        except (json.JSONDecodeError, TypeError):
+            column_state = []
 
-        sort_model = []
-        for sm in data.get('sort_model', []):
-            filters = {k: FilterDetail(**v) for k, v in sm.get('filters', {}).items()}
-            sort_model.append(ViewSetting(name=sm['name'], view=sm['view'], filters=filters, default=sm['default']))
+        try:
+            sort_model_data = json.loads(data.get('sort_model', '[]'))
+            sort_model = []
+            for sm in sort_model_data:
+                filters_dict = sm.get('filters', {})
+                filters = {}
+                if isinstance(filters_dict, dict):
+                    for k, v in filters_dict.items():
+                        if isinstance(k, str) and isinstance(v, dict):
+                            filters[k] = FilterDetail(**v)
+                sort_model.append(ViewSetting(name=sm['name'], view=sm['view'], filters=filters, default=sm['default']))
+        except (json.JSONDecodeError, TypeError):
+            sort_model = []
 
-        filter_model = []
-        for fm in data.get('filter_model', []):
-            filters = {k: FilterDetail(**v) for k, v in fm.get('filters', {}).items()}
-            filter_model.append(ViewSetting(name=fm['name'], view=fm['view'], filters=filters, default=fm['default']))
+        try:
+            filter_model_data = json.loads(data.get('filter_model', '[]'))
+            filter_model = []
+            for fm in filter_model_data:
+                filters_dict = fm.get('filters', {})
+                filters = {}
+                if isinstance(filters_dict, dict):
+                    for k, v in filters_dict.items():
+                        if isinstance(k, str) and isinstance(v, dict):
+                            filters[k] = FilterDetail(**v)
+                filter_model.append(
+                    ViewSetting(name=fm['name'], view=fm['view'], filters=filters, default=fm['default']))
+        except (json.JSONDecodeError, TypeError):
+            filter_model = []
 
         return Perspective(
             id=data['id'],
