@@ -7,6 +7,25 @@ from ...database.database import get_db
 column_state_bp = Blueprint('column_state', __name__)
 
 
+def _convert_view_settings_to_dicts(view_settings):
+    """
+    Recursively converts a list of ViewSetting DTOs to a list of dictionaries,
+    including the nested FilterDetail DTOs.
+    """
+    if not view_settings:
+        return []
+
+    dict_list = []
+    for vs in view_settings:
+        filters_dict = {k: v.__dict__ for k, v in vs.filters.items()}
+        dict_list.append({
+            "name": vs.name,
+            "view": vs.view,
+            "filters": filters_dict,
+            "default": vs.default
+        })
+    return dict_list
+
 @column_state_bp.route('/save', methods=['POST'])
 def save_column_state_route():
     """
@@ -38,13 +57,19 @@ def save_column_state_route():
             layout_name_from_body = data.get('layout_name')
             updated_by_from_body = data.get('updated_by')
 
+            # Recursively convert nested DTOs to dictionaries for Pydantic validation
+            sort_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.sort_model)
+            filter_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.filter_model)
+
             perspective_update = PerspectiveUpdate(
                 username=username,
                 layout_name=layout_name_from_body if layout_name_from_body else existing_perspective.layout_name,
                 updated_by=updated_by_from_body if updated_by_from_body else existing_perspective.updated_by,
                 column_state=validated_column_state,
-                sort_model=existing_perspective.sort_model,
-                filter_model=existing_perspective.filter_model
+                sort_model=sort_model_as_dict,
+                filter_model=filter_model_as_dict
+                #sort_model=existing_perspective.sort_model,
+                #filter_model=existing_perspective.filter_model
             )
             updated_perspective_model = service.update_perspective_by_username(username, perspective_update)
             validated_updated_perspective = Perspective.model_validate(updated_perspective_model, from_attributes=True)
@@ -75,7 +100,7 @@ def save_column_state_route():
         return jsonify({"error": str(e)}), 500
 
 
-@column_state_bp.route('/save_column_state', methods=['POST'])
+@column_state_bp.route('/save_single_column_state', methods=['POST'])
 def save_single_column_state_route():
     """
     Handles POST requests to save or update one or more column_state items.
@@ -142,13 +167,19 @@ def save_single_column_state_route():
             layout_name_from_body = data.get('layout_name')
             updated_by_from_body = data.get('updated_by')
 
+            # Recursively convert nested DTOs to dictionaries for Pydantic validation
+            sort_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.sort_model)
+            filter_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.filter_model)
+
             perspective_update = PerspectiveUpdate(
                 username=username,
                 layout_name=layout_name_from_body if layout_name_from_body else existing_perspective.layout_name,
                 updated_by=updated_by_from_body if updated_by_from_body else existing_perspective.updated_by,
                 column_state=final_column_state_list_for_pydantic,
-                sort_model=existing_perspective.sort_model,
-                filter_model=existing_perspective.filter_model
+                sort_model=sort_model_as_dict,
+                filter_model=filter_model_as_dict
+                #sort_model=existing_perspective.sort_model,
+                #filter_model=existing_perspective.filter_model
             )
             updated_perspective_model = service.update_perspective_by_username(username, perspective_update)
             validated_updated_perspective = Perspective.model_validate(updated_perspective_model, from_attributes=True)
@@ -179,6 +210,69 @@ def save_single_column_state_route():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@column_state_bp.route('/delete_single', methods=['DELETE'])
+def delete_single_column_state_route():
+    """
+    Handles DELETE requests to remove a single column_state item by name.
+    The request body must contain the username and the name of the column state to delete.
+    """
+    try:
+        data = request.json
+        username = data.get('username')
+        column_state_name_to_delete = data.get('column_state_name')
+
+        if not username or not column_state_name_to_delete:
+            return jsonify({"error": "Username and column_state_name are required."}), 400
+
+        conn, curr = get_db()
+        service = PerspectiveService(conn, curr)
+
+        existing_perspective = service.get_perspective_by_username(username)
+
+        if not existing_perspective:
+            return jsonify({"message": f"Perspective for user '{username}' not found."}), 404
+
+        # Step 1: Get the current list of column states from the existing perspective.
+        original_column_state_list = existing_perspective.column_state
+
+        # Step 2: Create a new list that excludes the item you want to delete.
+        # This is a key part of the logic. We're filtering the list.
+        updated_column_state_list = [
+            cs for cs in original_column_state_list if cs.name != column_state_name_to_delete
+        ]
+
+        # Step 3: Check if the list size changed. If not, the item was not found.
+        if len(updated_column_state_list) == len(original_column_state_list):
+            return jsonify({"message": f"Column state with name '{column_state_name_to_delete}' not found."}), 404
+
+        # Step 4: Convert the updated list of DTOs into a list of dictionaries.
+        # This is necessary because the PerspectiveUpdate Pydantic model expects dictionaries.
+        final_column_state_list_for_pydantic = [item.__dict__ for item in updated_column_state_list]
+
+        # Step 5: Prepare the PerspectiveUpdate object.
+        # We need to correctly convert the nested DTOs in sort_model and filter_model to dictionaries.
+        sort_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.sort_model)
+        filter_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.filter_model)
+
+        perspective_update = PerspectiveUpdate(
+            username=username,
+            layout_name=existing_perspective.layout_name,
+            updated_by=existing_perspective.updated_by,
+            column_state=final_column_state_list_for_pydantic,
+            sort_model=sort_model_as_dict,
+            filter_model=filter_model_as_dict
+        )
+
+        # Step 6: Call the service layer to perform the database update.
+        updated_perspective_model = service.update_perspective_by_username(username, perspective_update)
+
+        # Step 7: Validate the final model and return the JSON response.
+        validated_updated_perspective = Perspective.model_validate(updated_perspective_model, from_attributes=True)
+        return jsonify(validated_updated_perspective.model_dump(mode='json')), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @column_state_bp.route('/singleSaveUpdate', methods=['POST'])
 def save_update_single_column_state_route():
@@ -211,13 +305,19 @@ def save_update_single_column_state_route():
             layout_name_from_body = data.get('layout_name')
             updated_by_from_body = data.get('updated_by')
 
+            # Recursively convert nested DTOs to dictionaries for Pydantic validation
+            sort_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.sort_model)
+            filter_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.filter_model)
+
             perspective_update = PerspectiveUpdate(
                 username=username,
                 layout_name=layout_name_from_body if layout_name_from_body else existing_perspective.layout_name,
                 updated_by=updated_by_from_body if updated_by_from_body else existing_perspective.updated_by,
                 column_state=[cs.model_dump() for cs in validated_column_state],
-                sort_model=existing_perspective.sort_model,
-                filter_model=existing_perspective.filter_model
+                sort_model=sort_model_as_dict,
+                filter_model=filter_model_as_dict
+                #sort_model=existing_perspective.sort_model,
+                #filter_model=existing_perspective.filter_model
             )
             updated_perspective_model = service.update_perspective_by_username(username, perspective_update)
             validated_updated_perspective = Perspective.model_validate(updated_perspective_model, from_attributes=True)
