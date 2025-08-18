@@ -370,3 +370,66 @@ CREATE TABLE recsui.perspectives (
     filter_model JSONB DEFAULT '[]'::JSONB,
     updated_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );	
+
+"username": "22222222",
+"layout_name": "reconciliationsView",
+"updated_by": "skg@gmail.com",
+
+look data here first and details below and delete_single_column_state_route
+{
+    "username": "333333",
+    "column_state": [
+        {
+            "name": "Skg11111",
+            "view": "reconciliations",
+            "defaultColumns": [
+                "cif",
+                "reClass",
+                "riskEventType"
+            ],
+            "default": false
+        },
+		{
+            "name": "Skg22222",
+            "view": "reconciliations",
+            "defaultColumns": [
+                "forcedEscalated",
+                "businessUnit"
+            ],
+            "default": false
+        }
+    ]
+}
+There id two object in "column_state" array list but name is diffrent if i am triing to delete one object list by name value from "column_state" array list that object should be delete and dta will be update accorsingly
+suuppose example in dat username="333333"  and "name": "Skg11111" the only this 
+{
+	"name": "Skg11111",
+	"view": "reconciliations",
+	"defaultColumns": [
+		"cif",
+		"reClass",
+		"riskEventType"
+	],
+	"default": false
+}
+will bedelete and rest will be there in database.
+
+There id two object in "column_state" array list but name is diffrent if i am saving or update data with same name than object dta will be update whichholding same name value soppuse sending data in body which below
+the object should update accrding to name value else add new object in in array obhect data list with neme value given in body
+{
+    "username": "333333",
+    "column_state": [
+        {
+            "name": "Skg11111",
+            "view": "reconciliations",
+            "defaultColumns": [
+                "forcedEscalated",
+                "businessUnit",
+                "cif",
+                "reClass",
+                "riskEventType"
+            ],
+            "default": false
+        }
+    ]
+}

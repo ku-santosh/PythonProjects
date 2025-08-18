@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, model_serializer
+from typing import Optional, List, Dict, Any, Union
+from pydantic import BaseModel, Field, model_serializer, validator
 
 # Schema for the nested filter details within sort and filter models
 class FilterDetail(BaseModel):
@@ -20,6 +20,16 @@ class ViewSetting(BaseModel):
     view: str
     filters: Dict[str, FilterDetail]
     default: bool
+
+    @validator('filters', pre=True)
+    def validate_filters(cls, v):
+        """
+        Validator to convert an empty string for `filters` to an empty dictionary.
+        This handles cases where the incoming JSON sends "filters": "".
+        """
+        if isinstance(v, str) and v == "":
+            return {}
+        return v
 
 # Base schema for creating or updating a perspective.
 # All fields are validated to be non-empty strings as requested.
