@@ -1,27 +1,34 @@
-from sqlalchemy import Column, Integer, String, JSON, DateTime, text
-from sqlalchemy.sql import func
-from api.database.database import Base
+from datetime import datetime
+from typing import Optional, List, Dict, Any
 
-class Perspective(Base):
-    """
-    SQLAlchemy ORM model for the 'perspectives' table in the 'recsui' schema.
-    This model maps to the data structure provided in the user's JSON.
-    """
-    __tablename__ = "perspectives"
-    __table_args__ = {"schema": "recsui"}
+class FilterDetail:
+    def __init__(self, type: str, filter: str):
+        self.type = type
+        self.filter = filter
 
-    # id is the primary key and is auto-incremented
-    id = Column(Integer, primary_key=True, index=True)
+class ColumnState:
+    def __init__(self, name: str, view: str, defaultColumns: List[str], default: bool):
+        self.name = name
+        self.view = view
+        self.defaultColumns = defaultColumns
+        self.default = default
 
-    # These fields are required and are validated to not be empty strings.
-    username = Column(String, nullable=False)
-    layout_name = Column(String, nullable=False)
-    updated_by = Column(String, nullable=False)
+class ViewSetting:
+    def __init__(self, name: str, view: str, filters: Dict[str, FilterDetail], default: bool):
+        self.name = name
+        self.view = view
+        self.filters = filters
+        self.default = default
 
-    # These fields store JSON data. JSONB is used for efficient storage and querying.
-    column_state = Column(JSON, nullable=False, default=text("'[]'::jsonb"))
-    sort_model = Column(JSON, nullable=False, default=text("'[]'::jsonb"))
-    filter_model = Column(JSON, nullable=False, default=text("'[]'::jsonb"))
-
-    # updated_time is automatically populated with the current timestamp
-    updated_time = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+class Perspective:
+    def __init__(self, id: int, username: str, layout_name: str, updated_by: str, updated_time: datetime,
+                 column_state: Optional[List[ColumnState]] = None, sort_model: Optional[List[ViewSetting]] = None,
+                 filter_model: Optional[List[ViewSetting]] = None):
+        self.id = id
+        self.username = username
+        self.layout_name = layout_name
+        self.updated_by = updated_by
+        self.updated_time = updated_time
+        self.column_state = column_state if column_state is not None else []
+        self.sort_model = sort_model if sort_model is not None else []
+        self.filter_model = filter_model if filter_model is not None else []

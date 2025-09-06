@@ -142,6 +142,10 @@ def save_single_column_state_route():
             existing_column_state_list = existing_perspective.column_state
 
             for validated_item in validated_column_states:
+                # If the incoming item is the new default, unset the old one
+                if validated_item.default:
+                    for existing_item in existing_column_state_list:
+                        existing_item.default = False
                 # Convert the Pydantic model back to a dictionary for easier comparison and update
                 validated_item_dict = validated_item.model_dump()
                 # Ensure defaultColumns list has no duplicates

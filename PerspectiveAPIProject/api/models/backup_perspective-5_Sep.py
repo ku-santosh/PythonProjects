@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pydantic import BaseModel, Field, conlist
 import json
 
 
@@ -20,6 +21,9 @@ class FilterDetail:
         self.type = type
         self.filter = filter
 
+    def to_dict(self):
+        return {"type": self.type, "filter": self.filter}
+
 
 class ViewSetting:
     """Represents the structure of a single item in the sort_model or filter_model arrays."""
@@ -30,6 +34,14 @@ class ViewSetting:
         self.filters = filters
         self.default = default
 
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "view": self.view,
+            "filters": {k: v.to_dict() for k, v in self.filters.items()},
+            "default": self.default,
+        }
+
 
 class Perspective:
     """
@@ -39,7 +51,7 @@ class Perspective:
 
     def __init__(self, id: int, username: str, layout_name: str, updated_by: str,
                  column_state: List[ColumnState], sort_model: List[ViewSetting],
-                 filter_model: Optional[List[ViewSetting]], updated_time: datetime):
+                 filter_model: List[ViewSetting], updated_time: datetime):
         self.id = id
         self.username = username
         self.layout_name = layout_name

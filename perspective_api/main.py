@@ -1,9 +1,20 @@
-import uvicorn
-from fastapi import FastAPI
-from api.v1.endpoints import perspective
+import os
+from flask import Flask, g
+from api.v1 import v1_bp
+from api.database.database import close_db_connection
 
-# Initialize the FastAPI application
-app = FastAPI(title="Perspective API", version="1.0.0")
+# Initialize the Flask application
+app = Flask(__name__)
 
-# Include the API router
-app.include_router(perspective.router, prefix="/api/v1", tags=["Perspectives"])
+# Register the blueprint for the entire v1 API
+app.register_blueprint(v1_bp, url_prefix='/api/v1')
+
+# Add a teardown function to close the database connection and cursor
+@app.teardown_appcontext
+def teardown_db(exception=None):
+    conn = g.pop('db_conn', None)
+    curr = g.pop('db_curr', None)
+    close_db_connection(conn, curr)
+
+if __name__ == '__main__':
+    app.run(debug=True)
