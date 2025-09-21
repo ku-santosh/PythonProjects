@@ -1,10 +1,5 @@
-# 📘 Feedback API
+-- init.sql : Schema and table for Feedback API
 
-A Flask-based API for storing and retrieving user feedback, using **PostgreSQL** with **JSONB** storage.
-
-## 🗄 Database Schema
-
-```sql
 CREATE SCHEMA IF NOT EXISTS recsui;
 
 CREATE TABLE IF NOT EXISTS recsui.recsFeedback (
@@ -15,4 +10,3 @@ CREATE TABLE IF NOT EXISTS recsui.recsFeedback (
     user_feedbacks JSONB DEFAULT '[]'::JSONB,
     updated_time TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
-```
