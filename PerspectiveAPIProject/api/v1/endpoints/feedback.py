@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
-from ...schemas.feedback import FeedbackCreate, FeedbackUpdate
+from ...schemas.feedback import FeedbackCreate, FeedbackUpdate, Feedback
 from ...services.feedback import FeedbackService
 from ...database.database import get_db
 
@@ -13,7 +13,7 @@ def get_all_feedbacks_route():
         conn, curr = get_db()
         service = FeedbackService(conn, curr)
         feedbacks = service.get_all_feedbacks()
-        return jsonify([vars(f) for f in feedbacks]), 200
+        return jsonify([Feedback.model_validate(vars(f)).model_dump(mode="json") for f in feedbacks]), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -26,7 +26,7 @@ def get_feedback_by_id_route(feedback_id):
         feedback = service.get_feedback_by_id(feedback_id)
         if not feedback:
             return jsonify({"user_feedbacks": [], "message": f"No feedback found with id '{feedback_id}'"}), 200
-        return jsonify(vars(feedback)), 200
+        return jsonify(Feedback.model_validate(vars(feedback)).model_dump(mode="json")), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -39,7 +39,7 @@ def get_feedback_by_gpn_route(user_gpn):
         feedback = service.get_feedback_by_gpn(user_gpn)
         if not feedback:
             return jsonify({"user_gpn": user_gpn, "user_feedbacks": [], "message": f"No feedback found for user_gpn '{user_gpn}'"}), 200
-        return jsonify(vars(feedback)), 200
+        return jsonify(Feedback.model_validate(vars(feedback)).model_dump(mode="json")), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
