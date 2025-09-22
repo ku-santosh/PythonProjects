@@ -93,3 +93,62 @@ def delete_feedback_route(feedback_id):
         return jsonify({"message": "Feedback deleted successfully"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@feedback_bp.route('/gpn/<string:user_gpn>/latest', methods=['GET'])
+def get_latest_feedbacks_by_gpn_route(user_gpn):
+    """
+        GET /api/v1/feedback/gpn/<user_gpn>/latest
+    """
+    try:
+        conn, curr = get_db()
+        service = FeedbackService(conn, curr)
+        results = service.get_latest_feedbacks_by_gpn(user_gpn)
+        if not results:
+            return jsonify({"user_gpn": user_gpn, "feedbacks": [], "message": f"No feedback found for user_gpn '{user_gpn}'"}), 200
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@feedback_bp.route('/gpn/<string:user_gpn>/date_range', methods=['GET'])
+def get_feedbacks_by_date_range_route(user_gpn):
+    """
+        GET /api/v1/feedback/gpn/<user_gpn>/date_range?start=<ISO8601>&end=<ISO8601>
+        start → optional (default = 1970-01-01T00:00:00Z)
+        end → optional (default = 9999-12-31T23:59:59Z)
+        Example -- GET /api/v1/feedback/gpn/49056020/date_range?start=2025-09-01&end=2025-09-10
+    """
+    try:
+        start = request.args.get("start", "1970-01-01T00:00:00Z")
+        end = request.args.get("end", "9999-12-31T23:59:59Z")
+
+        conn, curr = get_db()
+        service = FeedbackService(conn, curr)
+        results = service.get_feedbacks_by_date_range(user_gpn, start, end)
+        if not results:
+            return jsonify({"user_gpn": user_gpn, "feedbacks": [], "message": f"No feedback found for user_gpn '{user_gpn}' in date range"}), 200
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@feedback_bp.route('/<string:user_gpn>/component/<string:component_name>', methods=['GET'])
+def get_feedbacks_by_component_route(user_gpn, component_name):
+    """
+        GET /api/v1/feedback/49056020/component/Name001
+    """
+    try:
+        conn, curr = get_db()
+        service = FeedbackService(conn, curr)
+        results = service.get_feedbacks_by_component(user_gpn, component_name)
+        if not results:
+            return jsonify({
+                "user_gpn": user_gpn,
+                "component": component_name,
+                "feedbacks": [],
+                "message": f"No feedback found for component '{component_name}' and user_gpn '{user_gpn}'"
+            }), 200
+        return jsonify(results), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+

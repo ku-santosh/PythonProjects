@@ -112,3 +112,76 @@ class FeedbackService:
             return True
         self.db_conn.rollback()
         return False
+
+    def get_latest_feedbacks_by_gpn(self, user_gpn: str) -> list:
+        """Return the latest feedback entry for each componentName for a given user_gpn"""
+        self.db_curr.execute(
+            """
+            WITH exploded AS (
+                SELECT
+                    fb->>'componentName' AS component_name,
+                    fb->>'activeExpression' AS active_expression,
+                    fb->>'comment' AS comment,
+                    (fb->>'dateTime')::timestamptz AS date_time
+                FROM recsui.recsFeedback,
+                     jsonb_array_elements(user_feedbacks) AS fb
+                WHERE user_gpn = %s
+            )
+            SELECT DISTINCT ON (component_name) *
+            FROM exploded
+            ORDER BY component_name, date_time DESC;
+            """,
+            (user_gpn,)
+        )
+        return self.db_curr.fetchall()
+
+    def get_feedbacks_by_date_range(self, user_gpn: str, start: str, end: str) -> list:
+        """Return all feedbacks for a user within a date range"""
+        self.db_curr.execute(
+            """
+            SELECT fb
+            FROM recsui.recsFeedback,
+                 jsonb_array_elements(user_feedbacks) AS fb
+            WHERE user_gpn = %s
+              AND (fb->>'dateTime')::timestamptz BETWEEN %s AND %s
+            ORDER BY (fb->>'dateTime')::timestamptz DESC;
+            """,
+            (user_gpn, start, end)
+        )
+        rows = self.db_curr.fetchall()
+        return [r["fb"] for r in rows] if rows else []
+
+    '''
+    def get_feedback_by_component(self, user_gpn: str, component_name: str) -> Optional[dict]:
+        self.db_curr.execute(
+            """
+            SELECT fb
+            FROM recsui.recsFeedback,
+                 jsonb_array_elements(user_feedbacks) AS fb
+            WHERE user_gpn = %s
+              AND fb->>'componentName' = %s
+            ORDER BY (fb->>'dateTime')::timestamptz DESC
+            LIMIT 1;
+            """,
+            (user_gpn, component_name)
+        )
+        row = self.db_curr.fetchone()
+        return row["fb"] if row else None
+    '''
+
+    def get_feedbacks_by_component(self, user_gpn: str, component_name: str) -> list:
+        """Return all feedbacks for a user_gpn filtered by componentName"""
+        self.db_curr.execute(
+            """
+            SELECT fb
+            FROM recsui.recsFeedback,
+                 jsonb_array_elements(user_feedbacks) AS fb
+            WHERE user_gpn = %s
+              AND fb->>'componentName' = %s
+            ORDER BY (fb->>'dateTime')::timestamptz DESC;
+            """,
+            (user_gpn, component_name)
+        )
+        rows = self.db_curr.fetchall()
+        return [r["fb"] for r in rows] if rows else []
+
