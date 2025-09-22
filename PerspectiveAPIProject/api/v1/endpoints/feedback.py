@@ -46,6 +46,21 @@ def get_feedback_by_gpn_route(user_gpn):
 
 @feedback_bp.route('/', methods=['POST'])
 def create_or_append_feedback_route():
+    """
+        {
+          "user_gpn": "49056020",
+          "user_name": "Santosh Kumar",
+          "user_email": "santhosh.kumar.2@ubs.com",
+          "user_feedbacks": [
+            {
+              "componentName": "Name001",
+              "activeExpression": "Good",
+              "comment": "Long Text",
+              "dateTime": "2025-09-01T06:26:12.817693Z"
+            }
+          ]
+        }
+    """
     try:
         data = request.json
         feedback_in = FeedbackCreate.model_validate(data)
