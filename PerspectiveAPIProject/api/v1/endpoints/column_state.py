@@ -350,3 +350,66 @@ def save_update_single_column_state_route():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@column_state_bp.route('/delete_single', methods=['DELETE'])
+def delete_single_column_state_route():
+    """
+    route to use query params instead of JSON body for the DELETE
+    Handles DELETE requests to remove a single column_state item by name.
+    Uses query parameters instead of JSON body:
+    Example: DELETE /api/v1/column_state/delete_single?username=santosh&column_state_name=my_column
+    """
+    try:
+        # ✅ Get params from query string
+        username = request.args.get("username")
+        column_state_name_to_delete = request.args.get("column_state_name")
+
+        if not username or not column_state_name_to_delete:
+            return jsonify({"error": "Username and column_state_name are required."}), 400
+
+        conn, curr = get_db()
+        service = PerspectiveService(conn, curr)
+
+        existing_perspective = service.get_perspective_by_username(username)
+
+        if not existing_perspective:
+            return jsonify({"message": f"Perspective for user '{username}' not found."}), 404
+
+        # Step 1: Get the current list of column states
+        original_column_state_list = existing_perspective.column_state
+
+        # Step 2: Filter out the one to delete
+        updated_column_state_list = [
+            cs for cs in original_column_state_list
+            if hasattr(cs, "name") and cs.name != column_state_name_to_delete
+        ]
+
+        # Step 3: If nothing was deleted
+        if len(updated_column_state_list) == len(original_column_state_list):
+            return jsonify({"message": f"Column state with name '{column_state_name_to_delete}' not found."}), 404
+
+        # Step 4: Convert updated list into dicts
+        final_column_state_list_for_pydantic = [item.__dict__ for item in updated_column_state_list]
+
+        # Step 5: Prepare update object
+        sort_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.sort_model)
+        filter_model_as_dict = _convert_view_settings_to_dicts(existing_perspective.filter_model)
+
+        perspective_update = PerspectiveUpdate(
+            username=username,
+            layout_name=existing_perspective.layout_name,
+            updated_by=existing_perspective.updated_by,
+            column_state=final_column_state_list_for_pydantic,
+            sort_model=sort_model_as_dict,
+            filter_model=filter_model_as_dict
+        )
+
+        # Step 6: Update in DB
+        updated_perspective_model = service.update_perspective_by_username(username, perspective_update)
+
+        # Step 7: Return updated perspective
+        validated_updated_perspective = Perspective.model_validate(updated_perspective_model, from_attributes=True)
+        return jsonify(validated_updated_perspective.model_dump(mode='json')), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
