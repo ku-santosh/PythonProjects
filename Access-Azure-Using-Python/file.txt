@@ -1,0 +1,58 @@
+https://github.com/TechWebDots?tab=repositories
+https://github.com/PraveenKS30/Access-Azure-Using-Python
+https://stackoverflow.com/questions/79140836/python-script-to-access-azure-ky-vault-without-service-principle
+https://github.com/Azure-Samples/azure-sdk-for-python-keyvault-secrets-get-set-managedid/blob/master/example.py
+
+------------------------------------------------------------
+CREDENTIAL = DefaultAzureCredential(additionally_allowed_tenants=['*'])
+
+
+----------------------------------------------------
+Accessing uk8s azure key vault in python code example
+
+import os
+from azure.keyvault.secrets import SecretClient
+from azure.identity import DefaultAzureCredential
+
+# Get the Key Vault URL from an environment variable or define it directly
+# The vault name is usually in the format: https://<your-key-vault-name>.vault.azure.net
+key_vault_url = os.environ.get("KEY_VAULT_URL", "https://<your-key-vault-name>.vault.azure.net")
+
+# Define the name of the secret you want to retrieve
+secret_name = "ExampleSecret"
+
+try:
+    # Create a credential object. DefaultAzureCredential automatically handles authentication
+    # in various environments, including AKS with managed identity.
+    credential = DefaultAzureCredential()
+
+    # Create a SecretClient instance
+    client = SecretClient(vault_url=key_vault_url, credential=credential)
+
+    # Retrieve the secret
+    retrieved_secret = client.get_secret(secret_name)
+
+    print(f"Successfully retrieved secret: {secret_name}")
+    print(f"Secret value: {retrieved_secret.value}")
+
+except Exception as e:
+    print(f"An error occurred: {e}")
+    print("Ensure the managed identity has the correct permissions (e.g., Key Vault Secrets User role) on the Key Vault.")
+
+---------------------------------------------------------------------------
+
+
+# Source - https://stackoverflow.com/a/79141171
+# Posted by Venkateswarlu V
+# Retrieved 2026-02-26, License - CC BY-SA 4.0
+
+from azure.identity import AzureCliCredential
+from azure.keyvault.secrets import SecretClient
+
+credential = AzureCliCredential()
+client = SecretClient(vault_url="https://demo-keyvaulttest.vault.azure.net/", credential=credential)
+
+
+secret = client.get_secret("Demo-Secret")
+print(secret.value)
+
