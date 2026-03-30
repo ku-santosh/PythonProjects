@@ -14,6 +14,8 @@ This application converts certificate text files into PEM format and helps debug
 ### 📦 Install Dependencies
 pip install flask requests
 pip install azure-identity azure-keyvault-secrets
+pip install azure-identity azure-keyvault-secrets azure-keyvault-certificates
+pip install azure-storage-blob azure-identity
 
 ### Run app
 python app.py
